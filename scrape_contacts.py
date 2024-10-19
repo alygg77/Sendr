@@ -46,7 +46,8 @@ def scrape_emails(tag, n, language, path, reject=[]):
                 df.to_csv(self.path, mode='a', header=False, index=False)
 
     def create_file(path):
-        os.remove(path)
+        if os.path.exists(path):
+            os.remove(path)
         df = pd.DataFrame(columns=['email', 'link'])
         df.to_csv(path, mode='w', header=True, index=False)
         return True
@@ -71,3 +72,4 @@ def scrape_emails(tag, n, language, path, reject=[]):
 
     print(f"Emails saved to '{path}'")
     return df
+

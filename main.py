@@ -8,10 +8,12 @@ import subprocess
 from scrape_contacts import scrape_emails
 from get_desc import get_description
 
+
 def get_google_search(software_desc, company_desc, possible_users):
     # Generate a Google search query based on user inputs
     query = f"{software_desc} {company_desc} {possible_users}"
-    return query
+    return str(query)
+
 
 def generate_email(software_description, company_description):
     # Generate an email content based on descriptions
@@ -21,13 +23,46 @@ def generate_email(software_description, company_description):
     )
     return email_content
 
+
+def print_colored_email(domain, email_content):
+    # ANSI escape codes for colors
+    red = "\033[91m"
+    green = "\033[92m"
+    yellow = "\033[93m"
+    reset = "\033[0m"
+
+    # Print the colored output
+    print(f"{green}Generated email for {domain}:{reset}")
+    print(f"{yellow}{email_content}{reset}\n")
+
+
 def run_get_list():
     # Run get_list.py as a subprocess
     subprocess.run(['python', 'get_list.py'])
 
+
+def scrape_emails_with_retries(google_q, max_retries=3, wait_time=5):
+    # Retry mechanism for scrape_emails
+    retries = 0
+    while retries < max_retries:
+        try:
+            # Try to scrape emails
+            scrape_emails(google_q, 20, 'en', 'results.csv')
+            break  # Break the loop if successful
+        except Exception as e:
+            # Handle exception and retry
+            print(f"Error occurred in scraping: {e}. Retrying {retries + 1}/{max_retries}...")
+            retries += 1
+            time.sleep(wait_time)
+    if retries == max_retries:
+        print("Max retries reached. Exiting scrape process.")
+        raise RuntimeError("Failed to scrape emails after multiple attempts.")
+
+
 def scrape_emails_thread(google_q):
-    # Run scrape_emails in a separate thread
-    scrape_emails(google_q, 20, 'en', 'results.csv')
+    # Run scrape_emails with retries in a separate thread
+    scrape_emails_with_retries(google_q)
+
 
 def main():
     # Take inputs from the user
@@ -35,19 +70,27 @@ def main():
     company_desc = input("Enter Company description: ")
     possible_users = input("Enter Possible users: ")
 
+    # Remove results_filtered.csv if it exists
+    if os.path.exists('results_filtered.csv'):
+        os.remove('results_filtered.csv')
+
     # Generate Google search query
     google_q = get_google_search(software_desc, company_desc, possible_users)
+    print("we are here: google_q")
 
     # Start scrape_emails in a separate thread
     scrape_thread = threading.Thread(target=scrape_emails_thread, args=(google_q,))
     scrape_thread.start()
+    print("we are here: 2")
+    time.sleep(6)  # Allow some time for the scraping to begin
 
     k = 0
     finished = False
 
     while not finished:
-        # Run get_list.py to update results_filtered.csv
-        run_get_list()
+        print("we are here: 3")
+        run_get_list()  # Run the get_list.py script
+        time.sleep(2)  # Small delay before checking again
 
         # Check if results_filtered.csv exists
         if os.path.exists('results_filtered.csv'):
@@ -66,7 +109,7 @@ def main():
 
                 # Generate email for this line and description
                 email_content = generate_email(software_desc, description)
-                print(f"Generated email for {domain}:\n{email_content}\n")
+                print_colored_email(domain, email_content)
 
                 # Save updated dataframe back to CSV
                 df_filtered.to_csv('results_filtered.csv', index=False)
@@ -74,7 +117,7 @@ def main():
                 # Increment k
                 k += 1
             else:
-                # No new lines to process
+                # No new lines to process, check if scraping is finished
                 if not scrape_thread.is_alive():
                     finished = True
                 else:
@@ -85,6 +128,7 @@ def main():
             time.sleep(5)
 
     print("Processing completed.")
+
 
 if __name__ == '__main__':
     main()
