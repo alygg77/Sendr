@@ -80,6 +80,7 @@ def main():
 
     # Start scrape_emails in a separate thread
     scrape_thread = threading.Thread(target=scrape_emails_thread, args=(google_q,))
+    scrape_thread.daemon = True  # Daemon thread will exit when the main thread exits
     scrape_thread.start()
     print("we are here: 2")
     time.sleep(6)  # Allow some time for the scraping to begin
@@ -88,7 +89,7 @@ def main():
     finished = False
 
     while not finished:
-        print("we are here: 3")
+        print("we are here: 3, number: ", k)
         run_get_list()  # Run the get_list.py script
         time.sleep(2)  # Small delay before checking again
 
