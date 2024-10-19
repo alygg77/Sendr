@@ -13,7 +13,6 @@ def get_description(link):
             "prompt": "Write a comprehensive and detailed description about the company."
         }
     })
-    return data["extract"]["company"]["description"]
+    return str(data ["extract"]["company"])[0:500]
 
-print(get_description("consultancy.uk"))
 

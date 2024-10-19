@@ -46,13 +46,7 @@ def scrape_emails(tag, n, language, path, reject=[]):
                 df.to_csv(self.path, mode='a', header=False, index=False)
 
     def create_file(path):
-        if os.path.exists(path):
-            response = input(f"File '{path}' already exists. Replace? (y/n): ")
-            if response.lower() != 'y':
-                print("Operation cancelled.")
-                return False
-            else:
-                os.remove(path)
+        os.remove(path)
         df = pd.DataFrame(columns=['email', 'link'])
         df.to_csv(path, mode='w', header=True, index=False)
         return True
@@ -77,8 +71,3 @@ def scrape_emails(tag, n, language, path, reject=[]):
 
     print(f"Emails saved to '{path}'")
     return df
-
-# Example usage:
-bad_words = ['facebook', 'instagram', 'youtube', 'twitter', 'wiki']
-df = scrape_emails('crm companies in london', 20, 'en', 'results.csv', reject=bad_words)
-print(df.head())
