@@ -7,6 +7,7 @@ import os
 import subprocess
 from scrape_contacts import scrape_emails
 from get_desc import get_description
+from get_list import process_csv
 
 
 def get_google_search(software_desc, company_desc, possible_users):
@@ -83,14 +84,14 @@ def main():
     scrape_thread.daemon = True  # Daemon thread will exit when the main thread exits
     scrape_thread.start()
     print("we are here: 2")
-    time.sleep(6)  # Allow some time for the scraping to begin
+    time.sleep(10)  # Allow some time for the scraping to begin
 
     k = 0
     finished = False
 
     while not finished:
         print("we are here: 3, number: ", k)
-        run_get_list()  # Run the get_list.py script
+        process_csv('results.csv') # Run the get_list.py script
         time.sleep(2)  # Small delay before checking again
 
         # Check if results_filtered.csv exists
@@ -103,7 +104,11 @@ def main():
                 domain = row['domain']
 
                 # Generate description for this domain
-                description = get_description(domain)
+                try:
+                    description = get_description(domain)
+                except Exception as e:
+                    print(f"Error occurred while fetching description for {domain}: {e}")
+                    description = "Description not available"
 
                 # Add description to the dataframe
                 df_filtered.at[k, 'description'] = description

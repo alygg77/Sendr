@@ -17,14 +17,12 @@ def extract_domain(link):
 
 # Parse the CSV file, filter duplicates, and remove invalid domains
 def process_csv(file_path):
-    # Load the CSV file into a DataFrame
     df = pd.read_csv(file_path)
-
-    # Remove duplicates based on 'email', keeping the first occurrence
     df_filtered = df.drop_duplicates(subset=['email'], keep='first')
-
-    # Extract the domain part from 'link' and add it as a new column in the DataFrame
     df_filtered['domain'] = df_filtered['link'].apply(extract_domain)
+
+    # Add a temporary index column to maintain order
+    df_filtered['order'] = df_filtered.index
 
     # Filter out rows where the domain contains numbers
     df_filtered = df_filtered[df_filtered['domain'].apply(is_valid_domain)]
@@ -38,18 +36,40 @@ def process_csv(file_path):
         # If 'results_filtered.csv' exists, read it
         df_existing = pd.read_csv(filtered_file_path)
 
-        # Concatenate df_filtered and df_existing, but only update 'email', 'link', and 'domain'
-        df_existing.update(df_filtered[['email', 'link', 'domain']])
+        # Merge the new data with the existing data, conserving the 'description' column
+        df_combined = pd.merge(
+            df_existing,
+            df_filtered[['email', 'link', 'domain', 'order']],
+            on='domain',
+            how='outer',
+            suffixes=('_existing', '_new')
+        )
+
+        # Keep the existing 'description' column
+        df_combined['description'] = df_combined['description'].fillna('')
+
+        # Fill missing data from the new file
+        df_combined['email'] = df_combined['email_new'].combine_first(df_combined['email_existing'])
+        df_combined['link'] = df_combined['link_new'].combine_first(df_combined['link_existing'])
+
+        # Drop the unnecessary duplicate columns
+        df_combined = df_combined.drop(columns=['email_existing', 'link_existing', 'email_new', 'link_new'])
+
+        # Sort by the original order from df_filtered (using the 'order' column)
+        df_combined = df_combined.sort_values(by='order').drop(columns=['order'])
 
         # Save the combined DataFrame to 'results_filtered.csv'
-        df_existing.to_csv(filtered_file_path, index=False)
+        df_combined.to_csv(filtered_file_path, index=False)
 
         # Print the remaining valid domains
-        for email, domain in zip(df_existing['email'], df_existing['domain']):
+        for email, domain in zip(df_combined['email'], df_combined['domain']):
             print(f"Valid domain extracted from {email}: {domain}")
 
         print(f"Filtered CSV updated and saved as {filtered_file_path}")
     else:
+        # Sort by the original order before saving
+        df_filtered = df_filtered.sort_values(by='order').drop(columns=['order'])
+
         # Save the filtered DataFrame to 'results_filtered.csv'
         df_filtered.to_csv(filtered_file_path, index=False)
 
@@ -58,10 +78,3 @@ def process_csv(file_path):
             print(f"Valid domain extracted from {email}: {domain}")
 
         print(f"Filtered CSV saved as {filtered_file_path}")
-
-if __name__ == "__main__":
-    # Example CSV file path
-    csv_file = 'results.csv'
-
-    # Process the CSV file and filter duplicates
-    process_csv(csv_file)
