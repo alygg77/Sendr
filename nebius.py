@@ -16,6 +16,7 @@ product = "I have an application that listens to guitar sounds and helps user to
 partners = "Music shops could work, maybe online music platforms"
 id = "email"
 
+#WRITES STRING TO FILE
 def write_message_to_file(message_content, id, i):
     # Create a filename by combining id and i
     filename = f"{id}_{i + 1}.txt"
@@ -25,6 +26,22 @@ def write_message_to_file(message_content, id, i):
 
     print(f"Message written to {filename}")
 
+#EXTRACTS DESCRIPTION FROM THE number,email,link,description FORMAT
+def extract_description(data_string):
+    # Split the input string by commas
+    parts = data_string.split(',')
+    
+    # Check if there are at least 4 parts to extract the description
+    if len(parts) < 4:
+        return "Invalid format: not enough parts"
+    
+    # Join all parts after the first three to form the description
+    description = ','.join(parts[3:]).strip()  # Strip whitespace from the description
+    return description
+
+# Example usage
+data_string = "123, example@example.com, http://example.com, This is the description of the item."
+description = extract_description(data_string)
 
 def searchTerm(company, product, partners):
 
@@ -47,16 +64,15 @@ def searchTerm(company, product, partners):
     print(searchTerm)
 
 
-#X IS THE NUMBER OF LINES YOU NEED TO READ FROM THE CSV FILE
+#X IS THE LINE NUMBER IN THE CSV FILE indexed 0
 def emailGenerator(x, company, product):
 
-    for i in range(0,x,1):
 
     ##GETTING THE LINE FROM CSV TO SPECIFIC_LINE
 
         # Specify the path to your CSV file and the line number you want to read (0-indexed).
-        file_path = 'EXAMPLE.csv'
-        line_number = i
+        file_path = 'compdata.csv'
+        line_number = x
 
         # Initialize a string variable to store the line.
         specific_line = ""
@@ -70,14 +86,14 @@ def emailGenerator(x, company, product):
                 if index == line_number:
                     specific_line = ','.join(row)  # Join the row elements with commas if needed.
                     break
-
+        description = extract_description(specific_line)
     ##REQUEST TO NEBIUS
         completion = client.chat.completions.create(
             model="meta-llama/Meta-Llama-3.1-70B-Instruct",
             messages=[
             {
             "role": "system",
-            "content": "You are an email generating tool. You will receive data about a company that you will be emailing to. User will inpput details about his software/application, and your job is to compile an email to offer the software/application services to the company in data. Your answer should be formated as follows: Subject: .... /n *Write the email here *. Data is here (ignore the email and link): " + specific_line
+            "content": "You are an email generating tool. You will receive data about a company that you will be emailing to. User will inpput details about his software/application, and your job is to compile an email to offer the software/application services to the company in data. Your answer should be formated as follows: Subject: .... /n *Write the email here *. Data is here (ignore the email and link): " + description
             },
             {
             "role": "user",
@@ -95,7 +111,7 @@ def emailGenerator(x, company, product):
 
 
     ## WRITING THE MESSAGE TO A FILE
-        write_message_to_file(message_content, id, i)
+        write_message_to_file(message_content, id, x)
 
     
 
@@ -103,4 +119,4 @@ def emailGenerator(x, company, product):
 
 #Running both functions:
 searchTerm(company,product,partners)
-emailGenerator(5,company,product)
+emailGenerator(4,company,product)
