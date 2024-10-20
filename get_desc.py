@@ -2,7 +2,7 @@ from firecrawl import FirecrawlApp
 from pydantic import BaseModel, Field
 
 # Initialize the FirecrawlApp with your API key
-app = FirecrawlApp(api_key='fc-00f55c1d16ed4ca5866f68ad393261ba')
+app = FirecrawlApp(api_key='fc-9c630a3afc284c6da6561f91b71c4270')
 def get_description(link):
     class ExtractSchema(BaseModel):
         about: str
