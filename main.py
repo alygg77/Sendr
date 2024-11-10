@@ -1,140 +1,191 @@
-# main.py
-
-import threading
-import time
-import pandas as pd
 import os
-import subprocess
-from scrape_contacts import scrape_emails
-from get_desc import get_description
-from get_list import process_csv
+import sqlite3
+from nbformat.v2.rwbase import rejoin_lines
+from openai import OpenAI
+from dotenv import load_dotenv
+import json
+from datetime import datetime
+from web_scraper import web_scraper
+import concurrent.futures
 
+def create_db(db_file):
+    conn = sqlite3.connect(db_file)
+    cursor = conn.cursor()
 
-def get_google_search(software_desc, company_desc, possible_users):
-    # Generate a Google search query based on user inputs
-    query = f"{software_desc} {company_desc} {possible_users}"
-    return str(query)
-
-
-def generate_email(software_description, company_description):
-    # Generate an email content based on descriptions
-    email_content = (
-        f"Hello,\n\nWe'd like to introduce our {software_description} tailored for "
-        f"{company_description}.\nBest regards."
+    # Create table if it doesn't exist
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        software_description TEXT NOT NULL,
+        company_description TEXT NOT NULL,
+        request TEXT NOT NULL,
+        target_clients TEXT NOT NULL
     )
-    return email_content
+    ''')
+    conn.commit()
+    conn.close()
+    user_info_folder = "users"
+    if not os.path.exists("db/" + user_info_folder):
+        os.makedirs("db/" + user_info_folder)
+        print(f"Folder '{user_info_folder}' created for user info.")
 
 
-def print_colored_email(domain, email_content):
-    # ANSI escape codes for colors
-    red = "\033[91m"
-    green = "\033[92m"
-    yellow = "\033[93m"
-    reset = "\033[0m"
+def insert_user(software_description, company_description, request, target_clients):
+    db_file = "db/users.sql"
+    conn = sqlite3.connect(db_file)
+    cursor = conn.cursor()
 
-    # Print the colored output
-    print(f"{green}Generated email for {domain}:{reset}")
-    print(f"{yellow}{email_content}{reset}\n")
+    # Insert the new user
+    cursor.execute('''
+    INSERT INTO users (software_description, company_description, request, target_clients) 
+    VALUES (?, ?, ?, ?)
+    ''', (software_description, company_description, request, target_clients))
 
+    # Get the ID of the newly inserted user
+    user_id = cursor.lastrowid
 
-def run_get_list():
-    # Run get_list.py as a subprocess
-    subprocess.run(['python', 'get_list.py'])
+    conn.commit()
+    conn.close()
 
+    # Create a folder for the user
+    user_folder = f'db/users/user_{user_id}'
+    if not os.path.exists(user_folder):
+        os.makedirs(user_folder)
+        print(f"Folder '{user_folder}' created for user ID {user_id}.")
 
-def scrape_emails_with_retries(google_q, max_retries=3, wait_time=5):
-    # Retry mechanism for scrape_emails
-    retries = 0
-    while retries < max_retries:
-        try:
-            # Try to scrape emails
-            scrape_emails(google_q, 20, 'en', 'results.csv')
-            break  # Break the loop if successful
-        except Exception as e:
-            # Handle exception and retry
-            print(f"Error occurred in scraping: {e}. Retrying {retries + 1}/{max_retries}...")
-            retries += 1
-            time.sleep(wait_time)
-    if retries == max_retries:
-        print("Max retries reached. Exiting scrape process.")
-        raise RuntimeError("Failed to scrape emails after multiple attempts.")
+    return user_id
 
 
-def scrape_emails_thread(google_q):
-    # Run scrape_emails with retries in a separate thread
-    scrape_emails_with_retries(google_q)
+def get_user_by_id(user_id):
+    db_file = "db/users.sql"
+    conn = sqlite3.connect(db_file)
+    cursor = conn.cursor()
+
+    # Fetch user details by id
+    cursor.execute('''
+    SELECT * FROM users WHERE id = ?
+    ''', (user_id,))
+
+    user = cursor.fetchone()  # Fetch the first (and only) result
+    conn.close()
+
+    return user
+
+
+def generate_google_initial_request(user_id):
+    load_dotenv()
+    db_file = "db/users.sql"
+    api_key = os.getenv("NEBIUS_API_KEY")
+    client = OpenAI(
+        base_url="https://api.studio.nebius.ai/v1/",
+        api_key=api_key
+    )
+    id, software_description, company_description, request, target_clients = get_user_by_id(user_id)
+    completion = client.chat.completions.create(
+        model="meta-llama/Meta-Llama-3.1-70B-Instruct",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a search term generator. User has a company -" + company_description + " with the following product description" + software_description + " He wants to find clients for his product" + "His target clients are " + target_clients
+            },
+            {
+                "role": "user",
+                "content": "Generate one combined search term for me. Don't categorize them. Simply print the search prompt - nothing else"
+            }
+        ], temperature=0.7
+    )
+
+    data = json.loads(completion.to_json())
+    searchTerm = data['choices'][0]['message']['content']
+    return searchTerm
+
+
+def web_scraper_wrapper(file_path, user_id, timestamp, number):
+    with open(file_path, 'r') as file:
+        google_search = file.read()
+    web_scraper(google_search, 20, "en", f'db/users/user_{user_id}/request_{timestamp}/{number}.csv')
+
+
+def new_request(user_id):
+    db_file = "db/users.sql"
+    user = get_user_by_id(user_id)
+    if not user:
+        print(f"No user found with ID {user_id}")
+        return
+
+    id, software_description, company_description, request, target_clients = user
+
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Create the request folder
+    request_folder = f'db/users/user_{user_id}/request_{timestamp}'
+    if not os.path.exists(request_folder):
+        os.makedirs(request_folder)
+        print(f"Folder '{request_folder}' created for the new request.")
+    log_file_path = os.path.join(request_folder, 'log.txt')
+    with open(log_file_path, 'w') as log_file:
+        log_file.write(f"Request Log for User {user_id}\n")
+        log_file.write(f"Timestamp: {timestamp}\n")
+        log_file.write(f"Software Description: {software_description}\n")
+        log_file.write(f"Company Description: {company_description}\n")
+        log_file.write(f"Request: {request}\n")
+        log_file.write(f"Target Clients: {target_clients}\n")
+        log_file.write("Initiated google search\n")
+    for i in range(1, 4):
+        request_folder = f'db/users/user_{user_id}/request_{timestamp}'
+        log_file_path = os.path.join(request_folder, f'google_search_{i}.txt')
+        with open(log_file_path, 'w') as log_file:
+            if i == 3:
+                searchTerm = ("custom")
+            else:
+                searchTerm = generate_google_initial_request(user_id)
+            log_file.write(searchTerm)
+
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        for i in range(1, 4):
+            file_path = os.path.join(f'db/users/user_{user_id}/request_{timestamp}', f'google_search_{i}.txt')
+            futures.append(executor.submit(web_scraper_wrapper, file_path, user_id, timestamp, i))
+
+        # Optionally, wait for all threads to complete (this is implicit in 'with' block)
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result = future.result()  # Retrieve result, if any
+            except Exception as exc:
+                print(f'An error occurred: {exc}')
+
 
 
 def main():
-    # Take inputs from the user
-    software_desc = input("Enter Software description: ")
-    company_desc = input("Enter Company description: ")
-    possible_users = input("Enter Possible users: ")
+    db_file = "db/users.sql"
+    user_id = 1
+    def check_if_user_exists(db_file):
+        if not os.path.exists(db_file):
+            # Create the database if it doesn't exist
+            print("Database not found. Creating users.sql...")
+            create_db(db_file)
+            print("Database created successfully.")
 
-    # Remove results_filtered.csv if it exists
-    if os.path.exists('results_filtered.csv'):
-        os.remove('results_filtered.csv')
+            # Ask for user details
+            software_description = input("Enter your software description: ")
+            company_description = input("Enter your company description: ")
+            request = input("Enter your request for e-mails: ")
+            target_clients = input("Enter your supposed target clients: ")
 
-    # Generate Google search query
-    google_q = get_google_search(software_desc, company_desc, possible_users)
-    print("we are here: google_q")
-
-    # Start scrape_emails in a separate thread
-    scrape_thread = threading.Thread(target=scrape_emails_thread, args=(google_q,))
-    scrape_thread.daemon = True  # Daemon thread will exit when the main thread exits
-    scrape_thread.start()
-    print("we are here: 2")
-    time.sleep(10)  # Allow some time for the scraping to begin
-
-    k = 0
-    finished = False
-
-    while not finished:
-        print("we are here: 3, number: ", k)
-        process_csv('results.csv') # Run the get_list.py script
-        time.sleep(2)  # Small delay before checking again
-
-        # Check if results_filtered.csv exists
-        if os.path.exists('results_filtered.csv'):
-            df_filtered = pd.read_csv('results_filtered.csv')
-
-            if k < len(df_filtered):
-                # Process the k-th line
-                row = df_filtered.iloc[k]
-                domain = row['domain']
-
-                # Generate description for this domain
-                try:
-                    description = get_description(domain)
-                except Exception as e:
-                    print(f"Error occurred while fetching description for {domain}: {e}")
-                    description = "Description not available"
-
-                # Add description to the dataframe
-                df_filtered.at[k, 'description'] = description
-
-                # Generate email for this line and description
-                email_content = generate_email(software_desc, description)
-                print_colored_email(domain, email_content)
-
-                # Save updated dataframe back to CSV
-                df_filtered.to_csv('results_filtered.csv', index=False)
-
-                # Increment k
-                k += 1
-            else:
-                # No new lines to process, check if scraping is finished
-                if not scrape_thread.is_alive():
-                    finished = True
-                else:
-                    # Wait for new data to be scraped
-                    time.sleep(5)
+            # Insert the user details into the database
+            insert_user(software_description, company_description, request, target_clients)
+            print("Successfully inserted user.")
         else:
-            # Wait for results_filtered.csv to be created
-            time.sleep(5)
+            print(f"The database {db_file} already exists.")
+    check_if_user_exists(db_file)
+    new_request(1)
 
-    print("Processing completed.")
+
+
 
 
 if __name__ == '__main__':
     main()
+
