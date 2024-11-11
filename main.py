@@ -1,6 +1,5 @@
 import os
 import sqlite3
-from nbformat.v2.rwbase import rejoin_lines
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
@@ -9,10 +8,15 @@ from web_scraper import web_scraper
 import concurrent.futures
 
 def create_db(db_file):
+    # Ensure the directory for the database exists
+    db_folder = os.path.dirname(db_file)
+    if not os.path.exists(db_folder):
+        os.makedirs(db_folder)
+        print(f"Folder '{db_folder}' created for database storage.")
+
+    # Establish a connection and create the table if it doesn't exist
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
-
-    # Create table if it doesn't exist
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,11 +27,9 @@ def create_db(db_file):
     )
     ''')
     conn.commit()
+    cursor.close()
     conn.close()
-    user_info_folder = "users"
-    if not os.path.exists("db/" + user_info_folder):
-        os.makedirs("db/" + user_info_folder)
-        print(f"Folder '{user_info_folder}' created for user info.")
+    print("Database and table created successfully.")
 
 
 def insert_user(software_description, company_description, request, target_clients):
